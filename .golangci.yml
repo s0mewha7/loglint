@@ -1,0 +1,10 @@
+linters:
+  enable:
+    - govet
+    - loglint
+
+linters-settings:
+  custom:
+    loglint:
+      path: ./cmd/loglint/loglint.so
+      description: "Custom log linter for log messages"
