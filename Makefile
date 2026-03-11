@@ -1,15 +1,17 @@
-# Makefile для loglint
-
 LINTER=loglint
 TESTDATA=testdata/src
 
-.PHONY: all build run clean
+.PHONY: all build test run clean
 
-all: build run
+all: build test run
 
 build:
 	@echo "==> Building loglint..."
 	go build -o $(LINTER) ./cmd/loglint
+
+test:
+	@echo "==> Running tests..."
+	go test ./internal/rules
 
 run:
 	@echo "==> Running loglint on testdata..."

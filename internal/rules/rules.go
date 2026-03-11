@@ -7,19 +7,15 @@ import (
 	"unicode"
 
 	"github.com/s0mewha7/loglint/internal/utils"
-
 	"golang.org/x/tools/go/analysis"
 )
 
-var specialChars = regexp.MustCompile(`[!@#$%^&*(){}\[\]<>🚀…]+`)
+var badChars = regexp.MustCompile(`[!@#$%^&*(){}\[\]<>🚀…]+`)
 
-var sensitivePatterns = []string{
-	"password",
-	"passwd",
-	"token",
-	"api_key",
-	"apikey",
-	"secret",
+var secrets = []string{
+	"password", "passwd",
+	"token", "secret",
+	"api_key", "apikey",
 }
 
 func CheckLogContent(pass *analysis.Pass, call *ast.CallExpr) {
@@ -32,60 +28,75 @@ func CheckLogContent(pass *analysis.Pass, call *ast.CallExpr) {
 		return
 	}
 
-	checkLowercase(pass, call, msg)
-	checkEnglish(pass, call, msg)
-	checkSpecialChars(pass, call, msg)
+	if len(msg) > 0 && unicode.IsUpper(rune(msg[0])) {
+		pass.Reportf(call.Pos(), "log message must start with lowercase")
+	}
+
+	for _, r := range msg {
+		if unicode.IsLetter(r) && r > unicode.MaxASCII {
+			pass.Reportf(call.Pos(), "log message must be in english")
+			break
+		}
+	}
+
+	if badChars.MatchString(msg) {
+		pass.Reportf(call.Pos(), "log message must not contain special characters")
+	}
 }
 
 func CheckSecrets(pass *analysis.Pass, call *ast.CallExpr) {
-	for _, arg := range call.Args {
-		bin, ok := arg.(*ast.BinaryExpr)
-		if !ok {
-			continue
-		}
-
-		ident, ok := bin.Y.(*ast.Ident)
-		if !ok {
-			continue
-		}
-
-		name := strings.ToLower(ident.Name)
-
-		for _, s := range sensitivePatterns {
-			if strings.Contains(name, s) {
-				pass.Reportf(call.Pos(),
-					"possible sensitive data in logs: %s", ident.Name)
-			}
-		}
-	}
-}
-
-func checkLowercase(pass *analysis.Pass, node ast.Node, msg string) {
-	if len(msg) == 0 {
+	if !utils.IsLogCall(call) {
 		return
 	}
 
-	r := rune(msg[0])
-
-	if unicode.IsUpper(r) {
-		pass.Reportf(node.Pos(),
-			"log message must start with lowercase")
+	for _, arg := range call.Args {
+		checkExpr(pass, call, arg)
 	}
 }
 
-func checkEnglish(pass *analysis.Pass, node ast.Node, msg string) {
-	for _, r := range msg {
-		if unicode.IsLetter(r) && r > unicode.MaxASCII {
-			pass.Reportf(node.Pos(),
-				"log message must be in english")
-			return
+func checkExpr(pass *analysis.Pass, call *ast.CallExpr, expr ast.Expr) {
+	switch e := expr.(type) {
+	case *ast.BinaryExpr:
+		checkExpr(pass, call, e.X)
+		checkExpr(pass, call, e.Y)
+	case *ast.Ident:
+		if isSensitive(e.Name) {
+			pass.Reportf(call.Pos(), "possible sensitive data in logs: %s", e.Name)
+		}
+	case *ast.BasicLit:
+		val := strings.Trim(e.Value, `"`)
+		if isSensitive(val) {
+			pass.Reportf(call.Pos(), "possible sensitive data in logs: %s", val)
 		}
 	}
 }
 
-func checkSpecialChars(pass *analysis.Pass, node ast.Node, msg string) {
-	if specialChars.MatchString(msg) {
-		pass.Reportf(node.Pos(),
-			"log message must not contain special characters")
+func isSensitive(s string) bool {
+	s = strings.ToLower(s)
+	for _, secret := range secrets {
+		if strings.Contains(s, secret) {
+			return true
+		}
 	}
+	return false
+}
+
+func isUppercase(msg string) bool {
+	if len(msg) == 0 {
+		return false
+	}
+	return unicode.IsUpper(rune(msg[0]))
+}
+
+func isNonEnglish(msg string) bool {
+	for _, r := range msg {
+		if unicode.IsLetter(r) && r > unicode.MaxASCII {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSpecialChars(msg string) bool {
+	return badChars.MatchString(msg)
 }

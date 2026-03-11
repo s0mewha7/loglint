@@ -12,11 +12,8 @@ func IsLogCall(call *ast.CallExpr) bool {
 		return false
 	}
 
-	method := sel.Sel.Name
-
-	switch method {
-
-	case "Info", "Error", "Warn", "Debug":
+	switch sel.Sel.Name {
+	case "Info", "Error", "Warn", "Debug", "Fatal":
 		return true
 	}
 
@@ -29,15 +26,9 @@ func GetMessage(call *ast.CallExpr) (string, bool) {
 	}
 
 	lit, ok := call.Args[0].(*ast.BasicLit)
-	if !ok {
+	if !ok || lit.Kind != token.STRING {
 		return "", false
 	}
 
-	if lit.Kind != token.STRING {
-		return "", false
-	}
-
-	msg := strings.Trim(lit.Value, `"`)
-
-	return msg, true
+	return strings.Trim(lit.Value, `"`), true
 }

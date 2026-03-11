@@ -4,7 +4,6 @@ import (
 	"go/ast"
 
 	"github.com/s0mewha7/loglint/internal/rules"
-
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
@@ -20,20 +19,12 @@ func NewAnalyzer() *analysis.Analyzer {
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-
-	nodeFilter := []ast.Node{
-		(*ast.CallExpr)(nil),
-	}
-
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-
+	insp.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
-
 		rules.CheckLogContent(pass, call)
 		rules.CheckSecrets(pass, call)
-
 	})
 
 	return nil, nil
