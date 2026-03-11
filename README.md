@@ -1,7 +1,6 @@
 # loglint
 
-Линтер для Go, проверяет лог-сообщения на соответствие правилам стиля и безопасности.
-Совместим с golangci-lint в качестве плагина.
+Линтер для Go, анализирует лог-записи в коде и проверяет их соответствие правилам стиля и безопасности.
 
 ## Правила
 
@@ -18,19 +17,24 @@
 ```
 loglint/
 ├── cmd/loglint/
-│   └── main.go         # точка входа для standalone-запуска
+│   └── main.go              # точка входа, запуск анализатора
 ├── internal/
 │   ├── analyzer/
-│   │   └── analyzer.go # обход AST, вызов правил
+│   │   └── analyzer.go      # обход AST дерева, вызов правил
 │   ├── rules/
-│   │   └── rules.go    # логика проверок
+│   │   ├── rules.go         # реализация правил проверки
+│   │   └── rules_test.go    # unit-тесты для каждого правила
 │   └── utils/
-│       └── utils.go    # хелперы: определение лог-вызова, извлечение сообщения
+│       └── utils.go         # определение лог-вызова, извлечение сообщения
 ├── testdata/src/
 │   ├── slog/
-│   │   └── slog.go     # тестовые случаи для log/slog
+│   │   └── slog.go          # тестовые случаи для log/slog
 │   └── uberzap/
-│       └── zap.go      # тестовые случаи для go.uber.org/zap
+│       └── zap.go           # тестовые случаи для go.uber.org/zap
+├── .github/
+│   └── workflows/
+│       └── ci.yml           # CI/CD pipeline
+├── .gitignore
 ├── .golangci.yml
 ├── Makefile
 └── README.md
@@ -39,7 +43,6 @@ loglint/
 ## Требования
 
 - Go 1.22+
-- golangci-lint (если нужна интеграция)
 
 ## Установка
 ```bash
@@ -50,86 +53,95 @@ go mod tidy
 
 ## Сборка и запуск
 
-### Standalone
+Собрать бинарник и прогнать линтер на тестовых файлах:
 ```bash
-make build
-./bin/loglint ./...
+make all
 ```
 
-Или без сборки:
+Или по шагам:
 ```bash
-go run ./cmd/loglint ./...
+make build   # собрать бинарник ./loglint
+make run     # запустить линтер на testdata
+make test    # запустить unit-тесты
+make clean   # удалить бинарник
 ```
 
-### Плагин для golangci-lint
-
-Собрать `.so`:
+Без make:
 ```bash
-make plugin
-```
-
-Добавить в `.golangci.yml` своего проекта:
-```yaml
-linters-settings:
-  custom:
-    loglint:
-      path: /path/to/loglint/bin/loglint.so
-      description: "checks log messages for style and safety issues"
-
-linters:
-  enable:
-    - loglint
-```
-
-Запустить:
-```bash
-golangci-lint run ./...
+go build -o loglint ./cmd/loglint
+go vet -vettool=./loglint ./testdata/src/slog/slog.go
+go vet -vettool=./loglint ./testdata/src/uberzap/zap.go
 ```
 
 ## Тесты
+
+Unit-тесты покрывают каждое правило отдельно:
+
+- `TestLowercase` — проверка заглавной буквы в начале сообщения
+- `TestEnglish` — проверка на английский язык
+- `TestSpecialChars` — проверка на спецсимволы и эмодзи
+- `TestSecrets` — проверка на чувствительные данные
+
+Запуск:
 ```bash
 make test
 ```
 
+Вывод:
+```
+ok  github.com/s0mewha7/loglint/internal/rules  0.002s
+```
+
+## CI/CD
+
+Проект настроен на автоматическую сборку и тестирование через GitHub Actions.
+
+Пайплайн запускается при каждом пуше и pull request в ветку `main` и выполняет три шага:
+
+1. `make build` — сборка бинарника
+2. `make test` — запуск unit-тестов
+3. `make run` — прогон линтера на testdata
+
+Конфиг: `.github/workflows/ci.yml`
+
+Статус пайплайна виден во вкладке **Actions** на странице репозитория.
+
 ## Примеры
 ```go
-// ❌ не пройдёт проверку
+// ❌ не пройдёт
 
+// log/slog
 slog.Info("Starting server on port 8080")  // заглавная буква
-zap.Error("Failed to connect")             // заглавная буква
+slog.Info("запуск сервера")                // не английский
+slog.Warn("server started!🚀")             // спецсимволы
+slog.Info("user login: " + password)       // чувствительные данные
 
-slog.Info("запуск сервера")                // не английский язык
-zap.Error("ошибка подключения")            // не английский язык
+// go.uber.org/zap
+logger.Info("Starting server")             // заглавная буква
+logger.Error("ошибка подключения")         // не английский
+logger.Warn("server started!🚀")           // спецсимволы
+logger.Debug("auth: " + token)             // чувствительные данные
 
-slog.Info("server started!🚀")             // эмодзи и спецсимволы
-zap.Error("connection failed!!!")           // спецсимволы
-
-slog.Info("user password: " + password)    // чувствительные данные
-zap.Debug("api_key=" + apiKey)             // чувствительные данные
-
-// ✅ пройдёт проверку
+// ✅ пройдёт
 
 slog.Info("starting server on port 8080")
-zap.Error("failed to connect to database")
+slog.Error("failed to connect to database")
 slog.Info("user authenticated successfully")
-zap.Debug("api request completed")
+
+logger.Info("starting server on port 8080")
+logger.Error("failed to connect to database")
+logger.Info("user authenticated successfully")
 ```
 
 Вывод линтера:
 ```
-./main.go:6:2: log message must start with lowercase
-./main.go:9:2: log message must be in english
-./main.go:12:2: log message must not contain special characters
-./main.go:15:2: possible sensitive data in logs: password
+./testdata/src/slog/slog.go:8:2: log message must start with lowercase
+./testdata/src/slog/slog.go:12:2: log message must be in english
+./testdata/src/slog/slog.go:16:2: log message must not contain special characters
+./testdata/src/slog/slog.go:21:2: possible sensitive data in logs: password
+
+./testdata/src/uberzap/zap.go:9:2: log message must start with lowercase
+./testdata/src/uberzap/zap.go:13:2: log message must be in english
+./testdata/src/uberzap/zap.go:17:2: log message must not contain special characters
+./testdata/src/uberzap/zap.go:22:2: possible sensitive data in logs: token
 ```
-
-## Makefile
-
-| Команда | Описание |
-|---|---|
-| `make` / `make build` | Собрать бинарник в `bin/loglint` |
-| `make plugin` | Собрать плагин в `bin/loglint.so` |
-| `make test` | Запустить тесты |
-| `make lint` | Прогнать golangci-lint |
-| `make ci` | Тесты + билд + плагин |
-| `make clean` | Удалить `bin/` |
