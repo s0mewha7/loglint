@@ -1,4 +1,4 @@
-# loglint (Selectel InternShip Test Task)
+# loglint (Selectel Internship Test Task)
 
 Линтер для Go, анализирует лог-записи в коде и проверяет их соответствие правилам стиля и безопасности.
 
